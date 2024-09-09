@@ -188,7 +188,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
 
         UseComboSingleTarget(primaryTarget);
 
-        Service.Log(string.Format("GCD: {0:N2}", GCD));
+        // Service.Log(string.Format("GCD: {0:N2}", GCD));
     }
 
     /*
@@ -275,6 +275,10 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
      */
     private void UseDoubleCheckOrCheckmate(Actor? target)
     {
+        // Prevent use of the action if we are in a pre-pull state or during downtime
+        if (!Player.InCombat || target == null || target.IsAlly)
+            return;
+
         // Get cooldowns for both actions
         var DoubleCheckIn = CD(MCH.AID.DoubleCheck);
         var CheckmateIn = CD(MCH.AID.Checkmate);
@@ -320,6 +324,10 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
      */
     private void UseBarrelStabilizer(Actor? target)
     {
+        // Prevent use of the action if we are in a pre-pull state or during downtime
+        if (!Player.InCombat || target == null || target.IsAlly)
+            return;
+
         // If we are in a burst window, do not use it
         if (OverheatedLeft > 0) return;
 
@@ -339,6 +347,10 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
      */
     private void UseWildfire(Actor? target)
     {
+        // Prevent use of the action if we are in a pre-pull state or during downtime
+        if (!Player.InCombat || target == null || target.IsAlly)
+            return;
+
         // If we are in a burst window, do not use it
         // if (OverheatedLeft > 0) return;
 
@@ -369,6 +381,10 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
      */
     private void UseHypercharge(Actor? target)
     {
+        // Prevent use of the action if we are in a pre-pull state or during downtime
+        if (!Player.InCombat || target == null || target.IsAlly)
+            return;
+
         // Check multiple conditions to prevent action misuse
         if (Heat < 50 && HyperchargedLeft == 0
             || OverheatedLeft > 0
@@ -421,7 +437,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
      */
     private float EffectApplicationDelay(MCH.AID aid) => aid switch
     {
-        MCH.AID.Reassemble => 5.0f,
+        MCH.AID.Reassemble => 4.0f,
         MCH.AID.AirAnchor => 0.50f,
         _ => 0
     };
@@ -429,8 +445,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
     /*
      * Queue GCD helper function
      * 1. Make sure priority is not set to "None"
-     * 2. Check the EffectApplicationDelay float to determine how long to cast it before pull
-     * 3. Compare action priorities to queue the correct GCD first
+     * 2. Set delay to the length of the countdown minus the EffectApplicationDelay to properly use pre-pull actions
      */
     private void QueueGCD(MCH.AID aid, Actor? target, GCDPriority prio)
     {
@@ -441,6 +456,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
                 : 0;
             Hints.ActionsToExecute.Push(ActionID.MakeSpell(aid), target, ActionQueue.Priority.High + (int)prio,
                 delay: delay);
+
             if (prio > NextGCDPrio)
             {
                 NextGCD = aid;
@@ -457,7 +473,11 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
     {
         if (prio != OGCDPriority.None)
         {
-            Hints.ActionsToExecute.Push(ActionID.MakeSpell(aid), target, basePrio + (int)prio);
+            var delay = !Player.InCombat && World.Client.CountdownRemaining > 0
+                ? Math.Max(0, World.Client.CountdownRemaining.Value - EffectApplicationDelay(aid))
+                : 0;
+            Hints.ActionsToExecute.Push(ActionID.MakeSpell(aid), target, basePrio + (int)prio,
+                delay: delay);
         }
     }
 }
