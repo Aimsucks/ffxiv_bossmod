@@ -10,7 +10,8 @@ namespace BossMod.Autorotation;
 
 /*
  * Reference materials:
- * BossMod/BossMod/ActionQueue/ActionDefinition.cs (specifically ChargeCapIn) if we need to figure out if we've used a Drill charge
+ * Opener, burst, and Queen usage: https://www.thebalanceffxiv.com/jobs/ranged/machinist/basic-guide/
+ * Actions: https://www.thebalanceffxiv.com/jobs/ranged/machinist/skills-overview/
  * https://discord.com/channels/1001823907193552978/1191076246860349450/1282433792304222281
  */
 
@@ -170,9 +171,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
         NextGCD = MCH.AID.None;
         NextGCDPrio = GCDPriority.None;
 
-        // ------------------------
         // Begin processing actions
-        // ------------------------
 
         // oGCD actions
         UseHypercharge(primaryTarget);
@@ -247,13 +246,9 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
         // We cannot use Full Metal Field with no Full Metal Machinist buff
         if (FullMetalMachinistLeft == 0) return;
 
-        if (CombatTimer < 20 && NextToolIn > GCDLength)
-            QueueGCD(MCH.AID.FullMetalField, target, GCDPriority.FullMetalField);
-
-        else if (WildfireCD <= GCDLength)
-            QueueGCD(MCH.AID.FullMetalField, target, GCDPriority.FullMetalField);
-
-        else if (FullMetalMachinistLeft <= 6)
+        if (CombatTimer < 20 && NextToolIn > GCDLength
+            || WildfireCD <= GCDLength
+            || FullMetalMachinistLeft <= 6)
             QueueGCD(MCH.AID.FullMetalField, target, GCDPriority.FullMetalField);
     }
 
@@ -306,10 +301,10 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
         // if(Tools.Contains(NextGCD)) QueueOGCD(MCH.AID.Reassemble, target, OGCDPriority.Reassemble);
 
         // Check if a tool will be available within 1 GCD
-        if (NextToolIn <= GCDLength) QueueOGCD(MCH.AID.Reassemble, target, OGCDPriority.Reassemble);
-
-        // Use it before the countdown timer finishes, determined by Reassemble's EffectApplicationDelay below
-        if (World.Client.CountdownRemaining > 0) QueueOGCD(MCH.AID.Reassemble, target, OGCDPriority.Reassemble);
+        // Alternatively, use it before the countdown timer finishes, determined by Reassemble's EffectApplicationDelay below
+        if (NextToolIn <= GCDLength
+            || World.Client.CountdownRemaining is > 0 and < 5)
+            QueueOGCD(MCH.AID.Reassemble, target, OGCDPriority.Reassemble);
     }
 
     /*
@@ -364,7 +359,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
 
 
         // 2-minute burst window usage
-        if (CombatTimer > 60)
+        else if (CombatTimer > 60)
         {
             // Use after Full Metal Field and Hypercharge
             if (FullMetalMachinistLeft == 0 && OverheatedLeft > 0)
@@ -434,11 +429,41 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
      * Effect Application Delay
      * Note: This provides values for how long it takes actions to actually "hit" the target, which
      * are used primarily for pre-pull actions
+     *
+     * Source: https://docs.google.com/spreadsheets/d/1Emevsz5_oJdmkXy23hZQUXimirZQaoo5BejSzL3hZ9I
      */
     private float EffectApplicationDelay(MCH.AID aid) => aid switch
     {
+        // Special case for Reassemble to make sure it's used at ~4s before combat (it's instant otherwise)
         MCH.AID.Reassemble => 4.0f,
-        MCH.AID.AirAnchor => 0.50f,
+
+        // Sourced from spreadsheet linked above
+        MCH.AID.Detonator => 0.62f,
+        MCH.AID.Dismantle => 0.62f,
+        MCH.AID.Tactician => 0.62f,
+        MCH.AID.HeatBlast => 0.62f,
+        MCH.AID.Ricochet => 0.62f,
+        MCH.AID.Wildfire => 0.67f,
+        MCH.AID.Checkmate => 0.71f,
+        MCH.AID.DoubleCheck => 0.71f,
+        MCH.AID.HeatedSplitShot => 0.80f,
+        MCH.AID.GaussRound => 0.80f,
+        MCH.AID.HeatedCleanShot => 0.80f,
+        MCH.AID.HeatedSlugShot => 0.80f,
+        MCH.AID.BlazingShot => 0.85f,
+        MCH.AID.AutoCrossbow => 0.89f,
+        MCH.AID.Flamethrower => 0.89f,
+        MCH.AID.Bioblaster => 0.97f,
+        MCH.AID.FullMetalField => 1.02f,
+        MCH.AID.ChainSaw => 1.03f,
+        MCH.AID.Excavator => 1.07f,
+        MCH.AID.Scattergun => 1.15f,
+        MCH.AID.Drill => 1.15f,
+        MCH.AID.AirAnchor => 1.15f,
+        MCH.AID.SatelliteBeam => 3.16f,
+        MCH.AID.BarrelStabilizer => 0,
+        MCH.AID.Hypercharge => 0,
+        // MCH.AID.Reassemble => 0,
         _ => 0
     };
 
@@ -468,6 +493,7 @@ public sealed class AimsucksMCH(RotationModuleManager manager, Actor player) : R
     /*
      * Queue oGCD helper function
      * 1. Make sure priority is not set to "None"
+     * 2. Set delay to the length of the countdown minus the EffectApplicationDelay to properly use pre-pull actions
      */
     private void QueueOGCD(MCH.AID aid, Actor? target, OGCDPriority prio, float basePrio = ActionQueue.Priority.Low)
     {
